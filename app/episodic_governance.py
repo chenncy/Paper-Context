@@ -53,11 +53,11 @@ def should_skip_duplicate_episodic(
     top = (topic or "").strip().lower()
     try:
         from app.embedding_cache import CachedOpenAIEmbeddings
-        from app.config import API_KEY
+        from app.config import EMBEDDING_API_KEY, EMBEDDING_BASE_URL
 
         emb = CachedOpenAIEmbeddings(
-            api_key=API_KEY,
-            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+            api_key=EMBEDDING_API_KEY,
+            base_url=EMBEDDING_BASE_URL,
             model=os.getenv("EMBEDDING_MODEL", "text-embedding-v4"),
             check_embedding_ctx_length=False,
         )

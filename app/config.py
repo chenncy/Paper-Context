@@ -43,6 +43,13 @@ STORE_DIR = os.getenv("STORE_DIR", os.path.join(PROJECT_ROOT, "doc_store")).stri
 
 API_KEY = (os.getenv("DASHSCOPE_API_KEY") or "").strip()
 
+# embedding 端点：任何 OpenAI 兼容端点（DashScope / Ollama / vLLM / 其他云）。
+# 未配置时回退 DashScope 兼容模式 + DASHSCOPE_API_KEY（向后兼容）。
+EMBEDDING_BASE_URL = (
+    os.getenv("EMBEDDING_BASE_URL") or "https://dashscope.aliyuncs.com/compatible-mode/v1"
+).strip()
+EMBEDDING_API_KEY = (os.getenv("EMBEDDING_API_KEY") or API_KEY).strip()
+
 
 def validate_runtime_config(*, require_api_key: bool = True) -> None:
     """在应用启动时校验关键配置，避免 import 阶段抛错。"""

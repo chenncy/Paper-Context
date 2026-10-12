@@ -13,7 +13,8 @@ from langchain_core.documents import Document
 from langchain_core.vectorstores import VectorStore
 
 from app.config import (
-    API_KEY,
+    EMBEDDING_API_KEY,
+    EMBEDDING_BASE_URL,
     EPISODIC_MEMORY_COLLECTION,
     EPISODIC_MEMORY_ENABLED,
     EPISODIC_PROMPT_MAX_CHARS,
@@ -29,8 +30,8 @@ _episodic_store: Optional[VectorStore] = None
 
 def _get_embeddings():
     return CachedOpenAIEmbeddings(
-        api_key=API_KEY,
-        base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+        api_key=EMBEDDING_API_KEY,
+        base_url=EMBEDDING_BASE_URL,
         model=os.getenv("EMBEDDING_MODEL", "text-embedding-v4"),
         check_embedding_ctx_length=False,
         chunk_size=10,

@@ -65,7 +65,7 @@ Expect ~2 minutes of cold start on first tool call (index loading happens at sta
 ## Retrieval Tiers
 
 1. **FTS (default, zero-config)**: SQLite FTS5 full-text search, CJK bigram + word tokenization, BM25 ranking — clone and use
-2. **Local embedding model** (optional): configure an embedding endpoint in `.env` and vector search activates automatically
+2. **Embedding endpoint** (optional): point `EMBEDDING_BASE_URL` at any OpenAI-compatible endpoint (Ollama / vLLM / self-hosted gateway) and vector search activates automatically
 3. **Cloud API** (optional): any OpenAI-compatible embedding endpoint (e.g. DashScope text-embedding-v4)
 
 Ingestion is decoupled from embedding: when the embedding endpoint is unreachable, ingestion still succeeds (text goes to FTS, marked unvectorized); once restored, `scripts/backfill_embeddings.py` fills the vectors in.

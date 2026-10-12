@@ -13,7 +13,7 @@ from langchain_classic.storage import LocalFileStore, EncoderBackedStore
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from app.loader import clean_documents_with_report, get_file_loader, prepare_docs
-from app.config import STORE_DIR, API_KEY, VECTOR_BACKEND, VECTOR_COLLECTION_NAME
+from app.config import STORE_DIR, EMBEDDING_API_KEY, EMBEDDING_BASE_URL, VECTOR_BACKEND, VECTOR_COLLECTION_NAME
 from app.collection_revision import get_active_collection_name
 from app.vector_store import create_vectorstore, count_vectors, search_ids_by_metadata, delete_by_ids
 from langchain_community.retrievers import BM25Retriever
@@ -133,8 +133,8 @@ def _get_components(collection_name: Optional[str] = None):
     coll = collection_name or get_active_collection_name()
 
     embeddings = CachedOpenAIEmbeddings(
-        api_key=API_KEY,
-        base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+        api_key=EMBEDDING_API_KEY,
+        base_url=EMBEDDING_BASE_URL,
         model=os.getenv("EMBEDDING_MODEL", "text-embedding-v4"),
         check_embedding_ctx_length=False,
         chunk_size=10,

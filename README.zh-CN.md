@@ -65,7 +65,7 @@ startup_timeout_sec = 300
 ## 检索的三级档位
 
 1. **FTS（默认，零配置）**：SQLite FTS5 全文检索，CJK bigram + 英文词分词，BM25 排序——克隆即用
-2. **本地 embedding 模型**（可选）：配 `.env` 的 embedding 端点后向量检索自动启用
+2. **embedding 端点**（可选）：`EMBEDDING_BASE_URL` 指向任何 OpenAI 兼容端点（Ollama / vLLM / 自建网关）后向量检索自动启用
 3. **云 API**（可选）：任何 OpenAI 兼容 embedding 端点（如 DashScope text-embedding-v4）
 
 入库与 embedding 解耦：向量端点不可达时入库不失败（文本进 FTS、标记未向量化），恢复后 `scripts/backfill_embeddings.py` 补算。
