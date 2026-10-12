@@ -1,0 +1,86 @@
+# Paper-Context
+
+**给 AI Agent 的论文知识库与长期记忆。MCP-native，宿主无关——思考和编排交给你的 agent（Codex / Claude Code / 任何 MCP 客户端），"知道"和"记住"交给这里。**
+
+```
+┌─ 宿主层：Codex / Claude Code / Claude Desktop（思考、研究、写作）
+├─ 服务层：Paper-Context
+│    ① 论文知识库：rag_search（带出处的证据检索）/ rag_ingest（可撤销入库）
+│    ② 长期记忆：memory_save / get / history / forget / prepare / handoff
+└─ 数据层：SQLite FTS5（默认，零配置）+ 可选向量库 + MySQL（记忆真源）
+```
+
+## 快速开始（FTS 零配置——不需要任何 API key）
+
+```bash
+git clone https://github.com/chenncy/Paper-Context.git
+cd Paper-Context
+python -m venv .venv                # Python 3.10/3.11
+.venv/Scripts/pip install -r requirements.txt   # 或 .venv/bin/pip
+cp .env.example .env
+```
+
+**初始化数据库**（记忆服务需要 MySQL；知识库的 FTS 检索开箱即用）：
+
+```bash
+mysql -uroot -e "CREATE DATABASE paper_context CHARACTER SET utf8mb4"
+echo "SQLALCHEMY_DATABASE_URL=mysql+pymysql://root:@localhost:3306/paper_context?charset=utf8mb4" >> .env
+PYTHONPATH=. .venv/Scripts/python scripts/init_db.py
+```
+
+## 接入宿主
+
+**Claude Code**：项目根 `.mcp.json` 已登记，在项目目录打开即用。
+
+**Codex**（`~/.codex/config.toml`，路径替换为你的仓库位置）：
+
+```toml
+[mcp_servers.paper_context_rag]
+command = "<repo>/.venv/Scripts/python.exe"
+args = ["<repo>/rag_mcp_server.py"]
+startup_timeout_sec = 300
+
+[mcp_servers.paper_context_memory]
+command = "<repo>/.venv/Scripts/python.exe"
+args = ["<repo>/memory_mcp_server.py"]
+startup_timeout_sec = 300
+```
+
+首次调用前有约 2 分钟冷启动（索引加载，启动期预载完成，之后工具调用为热路径）。
+
+## 工具面（17 个 MCP 工具）
+
+| 服务 | 工具 | 说明 |
+|---|---|---|
+| 知识库 | `rag_search` | 统一检索：**mode=auto**（默认）向量优先、embedding 不可达自动降级全文检索并在 note 声明；`fts` 零依赖；返回带 title/section/page 出处的证据，不生成答案 |
+| | `rag_ingest` | PDF/DOCX/TXT 结构化入库（section 感知切分 + 表格/公式/caption 原子块）；带 reverse 描述符，`action=delete` 可撤销 |
+| | `rag_stats` | 索引统计：chunk 数 / FTS 数 / 向量化比例 |
+| 记忆 | `memory_save` / `memory_get` / `memory_list` / `memory_search` | 显式写入（global 跨会话 / session 会话内）与多路召回 |
+| | `memory_history` / `memory_update` / `memory_forget` | 版本链追溯 / 纠错（旧值入史）/ 遗忘（单条或按范围） |
+| | `memory_prepare` | PreparedContext：为一次任务装配**有界**记忆上下文（分层预算、带引用、失败降级不阻塞） |
+| | `handoff_prepare` / `commit` / `pending` / `acknowledge` | 跨会话/跨宿主工作转交状态机 |
+
+## 检索的三级档位
+
+1. **FTS（默认，零配置）**：SQLite FTS5 全文检索，CJK bigram + 英文词分词，BM25 排序——克隆即用
+2. **本地 embedding 模型**（可选）：配 `.env` 的 embedding 端点后向量检索自动启用
+3. **云 API**（可选）：任何 OpenAI 兼容 embedding 端点（如 DashScope text-embedding-v4）
+
+入库与 embedding 解耦：向量端点不可达时入库不失败（文本进 FTS、标记未向量化），恢复后 `scripts/backfill_embeddings.py` 补算。
+
+## 记忆系统的机制特性
+
+- **版本链与取代**：旧事实被新事实取代时显式 `superseded`（记录失效时刻），默认读取排除、`as_of` 时间旅行回看任意时刻
+- **GDPR 式遗忘**：按条或按范围（all/global/session）删除，级联清理向量与图谱投影
+- **冲突裁决**：同 key 不同 value 经 LLM 单次裁决（llm 参数注入，可替换）；preference 类冲突"条件化"而非覆盖
+- **Handoff 转交**：会话结束打包（objective/progress/next_steps/blockers）→ 下一次会话或另一个宿主认领——agent 换宿主不断档
+
+## 测试
+
+```bash
+PYTHONPATH=. .venv/Scripts/python -m pytest tests/ -q   # 71 个测试，全部本地 SQLite/临时文件
+```
+
+## License
+
+MIT

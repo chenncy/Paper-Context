@@ -1,0 +1,131 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# 虚拟环境
+venv/
+env/
+ENV/
+bert_env/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 环境变量和配置
+.env
+.evn
+*.env
+config.ini
+secrets.json
+
+# 数据库文件
+*.db
+*.sqlite
+*.sqlite3
+chroma_db_qwen/
+chroma_db_qwen_backup/
+chroma_db_qwen_backup_corrupted/
+doc_store/
+
+# 数据文件（包含敏感信息）
+data/
+*.pdf
+*.docx
+*.xlsx
+*.csv
+# 但保留示例文件（如果需要）
+# !data/example.pdf
+
+# 日志文件
+*.log
+logs/
+
+# 临时文件
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+tmp/
+
+# 编译文件
+*.pyc
+*.pyo
+*.pyd
+
+# 测试覆盖率
+.coverage
+htmlcov/
+.pytest_cache/
+
+# 构建文件
+bin/
+build/
+dist/
+*.apk
+
+# 字体文件（如果太大，可以选择性忽略）
+# font.ttf
+
+# 备份文件
+*.bak
+*.backup
+*_backup/
+*_backup_corrupted/
+
+# 评估产出物（每次运行会重新生成）
+eval_report.md
+eval_results.json
+# RAGAS 带时间戳输出（默认在 app/ragas_eval/ragas_outputs/；根目录旧文件亦忽略）
+app/ragas_eval/ragas_outputs/
+ragas_outputs/
+ragas_report*.md
+ragas_results*.json
+
+# Cursor / Claude 本地配置（skills 真源在 skills/）
+.claude/settings.local.json
+.agents/
+
+# 评估用 doc store（本地生成，同 doc_store/）
+doc_store_qasper_eval/
+
+# Milvus 本地运行时数据
+milvus-deployment/volumes/
+
+# 其他
+*.orig
+*.rej
+
+# 个人简历与求职材料（勿入库）
+resume.tex
+resume*.tex
+*.resume.*
+
+# 求职/面试材料（任何设备都不得入库）
+面试准备/
+求职准备.md
+简历*.md
+*面试*.md
+*求职*.md
