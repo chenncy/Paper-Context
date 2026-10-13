@@ -85,7 +85,7 @@ startup_timeout_sec = 300
 ## 测试
 
 ```bash
-PYTHONPATH=. .venv/Scripts/python -m pytest tests/ -q   # 71 个测试，全部本地 SQLite/临时文件
+PYTHONPATH=. .venv/Scripts/python -m pytest tests/ -q   # 75 个测试，全部本地 SQLite/临时文件
 ```
 
 ## License

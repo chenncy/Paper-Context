@@ -212,36 +212,16 @@ def run_ingestion_pipeline(
     paper_meta: Optional[Dict[str, Any]] = None,
     skip_index: bool = False,
     collection_name: Optional[str] = None,
-    defer_index: bool = False,
 ) -> IngestionResult:
-    """完整 ingestion：parse → clean → chunk → enrich → index → validate。"""
+    """MCP 服务同步入库：parse → clean → chunk → enrich → index → validate。"""
     from app.collection_revision import resolve_write_collection
     from app.concurrency_config import EMBEDDING_USE_STAGING
-    from app.embedding_worker import enqueue_embedding_ingest, is_embedding_worker_enabled
 
     logs: List[str] = []
     t0 = time.perf_counter()
     ctx = build_ingestion_context(file_path, username=username, paper_meta=paper_meta)
     filename = ctx["filename"]
     write_coll = collection_name or resolve_write_collection(use_staging=EMBEDDING_USE_STAGING)
-
-    if defer_index and is_embedding_worker_enabled() and not skip_index:
-        task_id = enqueue_embedding_ingest(
-            {
-                "file_path": file_path,
-                "username": username,
-                "paper_meta": paper_meta or {},
-                "use_staging": EMBEDDING_USE_STAGING,
-                "collection_name": write_coll,
-            }
-        )
-        logs.append(f"[EMBED] 已入队 Embedding Worker task_id={task_id} collection={write_coll}")
-        return IngestionResult(
-            success=True,
-            logs=logs,
-            context=build_ingestion_context(file_path, username=username, paper_meta=paper_meta),
-            validation={"valid": True, "warnings": ["deferred_to_embedding_worker"], "errors": [], "metrics": {}},
-        )
 
     try:
         raw_docs, parse_logs = parse_document(file_path)

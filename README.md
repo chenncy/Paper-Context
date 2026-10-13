@@ -85,7 +85,7 @@ Ingestion is decoupled from embedding: when the embedding endpoint is unreachabl
 ## Tests
 
 ```bash
-PYTHONPATH=. .venv/Scripts/python -m pytest tests/ -q   # 71 tests, all local (SQLite / tmp files)
+PYTHONPATH=. .venv/Scripts/python -m pytest tests/ -q   # 75 tests, all local (SQLite / tmp files)
 ```
 
 ## License
