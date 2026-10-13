@@ -1,6 +1,5 @@
 import os
 from app.config import API_KEY
-from dashscope import TextReRank
 
 from langchain_core.tools import tool
 
@@ -28,9 +27,11 @@ def rerank_documents(query, docs, top_n=3):
 
 
 def _rerank_dashscope(query, docs, top_n):
-    """调用阿里 GTE-Rerank"""
+    """调用阿里 GTE-Rerank（dashscope 为可选依赖——惰性 import，未安装时降级截断）"""
     doc_texts = [doc.page_content for doc in docs]
     try:
+        from dashscope import TextReRank
+
         response = TextReRank.call(
             model='gte-rerank',
             query=query,
