@@ -141,13 +141,20 @@ def _search_episodic(
 
 
 def count_episodic_chunks_for_user(username: str) -> int:
-    """粗估用户情节块数量（Milvus/Chroma 无 COUNT 时采样）。"""
+    """用户情节块数量（本地 metadata 查询，零网络）。
+
+    计数不得触发 embedding 调用——原实现借真语义检索采样计数，
+    在 embedding 端点不可达时会让健康统计整体卡死。
+    """
     if not EPISODIC_MEMORY_ENABLED:
         return 0
     try:
         vs = get_episodic_vectorstore()
-        docs = _search_episodic(vs, "conversation history", 50, username, None)
-        return len(docs)
+        collection = getattr(vs, "_collection", None)
+        if collection is None:
+            return -1
+        res = collection.get(where={"username": username})
+        return len(res.get("ids") or [])
     except Exception:
         return -1
 

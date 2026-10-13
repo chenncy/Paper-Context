@@ -1,5 +1,7 @@
 # Paper-Context
 
+[![tests](https://github.com/chenncy/Paper-Context/actions/workflows/tests.yml/badge.svg)](https://github.com/chenncy/Paper-Context/actions/workflows/tests.yml)
+
 **给 AI Agent 的论文知识库与长期记忆。MCP-native，宿主无关——思考和编排交给你的 agent（Codex / Claude Code / 任何 MCP 客户端），"知道"和"记住"交给这里。**
 
 [English](README.md)
@@ -12,22 +14,25 @@
 └─ 数据层：SQLite FTS5（默认，零配置）+ 可选向量库 + MySQL（记忆真源）
 ```
 
-## 快速开始（FTS 零配置——不需要任何 API key）
+## 快速开始（零配置——无需 API key、无需数据库）
 
 ```bash
 git clone https://github.com/chenncy/Paper-Context.git
 cd Paper-Context
 python -m venv .venv                # Python 3.10/3.11
 .venv/Scripts/pip install -r requirements.txt   # 或 .venv/bin/pip
-cp .env.example .env
+PYTHONPATH=. .venv/Scripts/python scripts/init_db.py
 ```
 
-**初始化数据库**（记忆服务需要 MySQL；知识库的 FTS 检索开箱即用）：
+到此即可用——FTS 全文检索零 API key，记忆服务默认本地 SQLite 文件
+（`paper_context.db`）。两个可选升级：
+
+- **向量检索**：`EMBEDDING_BASE_URL` 指向任意 OpenAI 兼容端点
+- **MySQL**（多进程/持久部署）：
 
 ```bash
 mysql -uroot -e "CREATE DATABASE paper_context CHARACTER SET utf8mb4"
 echo "SQLALCHEMY_DATABASE_URL=mysql+pymysql://root:@localhost:3306/paper_context?charset=utf8mb4" >> .env
-PYTHONPATH=. .venv/Scripts/python scripts/init_db.py
 ```
 
 ## 接入宿主

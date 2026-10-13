@@ -1,5 +1,7 @@
 # Paper-Context
 
+[![tests](https://github.com/chenncy/Paper-Context/actions/workflows/tests.yml/badge.svg)](https://github.com/chenncy/Paper-Context/actions/workflows/tests.yml)
+
 **A paper knowledge base and long-term memory for AI agents. MCP-native and host-agnostic — thinking and orchestration stay with your agent (Codex / Claude Code / any MCP client); knowing and remembering live here.**
 
 [中文文档](README.zh-CN.md)
@@ -12,22 +14,25 @@
 └─ Data layer: SQLite FTS5 (default, zero-config) + optional vector store + MySQL (memory source of truth)
 ```
 
-## Quick Start (FTS, zero-config — no API key required)
+## Quick Start (zero-config — no API key, no database required)
 
 ```bash
 git clone https://github.com/chenncy/Paper-Context.git
 cd Paper-Context
 python -m venv .venv                # Python 3.10/3.11
 .venv/Scripts/pip install -r requirements.txt   # or .venv/bin/pip
-cp .env.example .env
+PYTHONPATH=. .venv/Scripts/python scripts/init_db.py
 ```
 
-**Initialize the database** (memory service requires MySQL; the FTS knowledge base works out of the box):
+That's it — FTS retrieval works with zero API keys, and the memory service defaults
+to a local SQLite file (`paper_context.db`). Two optional upgrades:
+
+- **Vector search**: point `EMBEDDING_BASE_URL` at any OpenAI-compatible endpoint
+- **MySQL** (multi-process / persistent deployments):
 
 ```bash
 mysql -uroot -e "CREATE DATABASE paper_context CHARACTER SET utf8mb4"
 echo "SQLALCHEMY_DATABASE_URL=mysql+pymysql://root:@localhost:3306/paper_context?charset=utf8mb4" >> .env
-PYTHONPATH=. .venv/Scripts/python scripts/init_db.py
 ```
 
 ## Connect a Host
