@@ -106,31 +106,9 @@ def rag_ingest(
 def rag_stats() -> str:
     """知识库索引统计：向量后端、collection 名、chunk 数、FTS 全文索引数、向量化比例。"""
     try:
-        from app import rag_fts
-        from app.collection_revision import get_active_collection_name
-        from app.config import STORE_DIR, VECTOR_BACKEND
-        from app.retriever import _get_components
-        from app.vector_store import count_vectors
+        from app.rag_service import rag_stats as _stats
 
-        coll = get_active_collection_name()
-        vectorstore, _, _, _ = _get_components(coll)
-        chunk_count = count_vectors(vectorstore, coll)
-        parent_doc_count = 0
-        store_dir = Path(STORE_DIR)
-        if store_dir.exists():
-            parent_doc_count = sum(1 for p in store_dir.iterdir() if p.is_file())
-        fts_counts = rag_fts.counts()
-        return json.dumps(
-            {
-                "backend": VECTOR_BACKEND,
-                "collection": coll,
-                "chunk_count": chunk_count,
-                "parent_doc_count": parent_doc_count,
-                "retrieval_mode": os.getenv("RAG_RETRIEVAL_MODE", "auto"),
-                **fts_counts,
-            },
-            ensure_ascii=False,
-        )
+        return json.dumps(_stats(), ensure_ascii=False)
     except Exception as e:
         logger.exception("[rag_stats] %s", e)
         return json.dumps({"error": str(e)}, ensure_ascii=False)

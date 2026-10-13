@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import uuid
 from typing import Any, Dict, List, Optional
 
 from langchain_core.vectorstores import VectorStore
@@ -69,22 +70,12 @@ def _fts_synced(base_cls):
         def add_texts(self, texts, metadatas=None, ids=None, **kwargs):
             from app import rag_fts
 
-            if ids is None:
-                # 无显式 ids：先写向量（底层自生成 uuid 并返回），
-                # 再以真 ids 落 FTS（vectorized=1）——保证两侧 id 一致
-                result = super().add_texts(texts, metadatas=metadatas, ids=None, **kwargs)
-                metas = list(metadatas) if metadatas else [{} for _ in texts]
-                rag_fts.upsert_chunks(
-                    [
-                        {"id": cid, "text": t, "metadata": m}
-                        for cid, t, m in zip(result, texts, metas)
-                    ],
-                    vectorized=True,
-                )
-                return result
-
+            texts = list(texts)
             metas = list(metadatas) if metadatas else [{} for _ in texts]
-            chunk_ids = list(ids)
+            chunk_ids = list(ids) if ids is not None else [str(uuid.uuid4()) for _ in texts]
+            if len(texts) != len(metas) or len(texts) != len(chunk_ids):
+                raise ValueError("texts / metadatas / ids 长度不一致")
+            chunk_ids = [str(cid) if cid else str(uuid.uuid4()) for cid in chunk_ids]
             # FTS 先写（vectorized=0）：embedding 不可达时向量写入抛错、文本已保留
             rag_fts.upsert_chunks(
                 [
@@ -93,8 +84,18 @@ def _fts_synced(base_cls):
                 ],
                 vectorized=False,
             )
-            result = super().add_texts(texts, metadatas=metadatas, ids=ids, **kwargs)
-            rag_fts.mark_vectorized(chunk_ids)
+            result = list(super().add_texts(texts, metadatas=metas, ids=chunk_ids, **kwargs))
+            if len(result) != len(chunk_ids) or len(set(result)) != len(result):
+                raise RuntimeError("向量后端返回的 chunk IDs 不完整或重复；全文记录仍保留")
+            if result != chunk_ids:
+                # auto-id 后端可能忽略传入 ID：FTS 必须对齐实际向量 ID。
+                rag_fts.upsert_chunks([
+                    {"id": cid, "text": t, "metadata": m}
+                    for cid, t, m in zip(result, texts, metas)
+                ], vectorized=True)
+                rag_fts.delete_by_chunk_ids([cid for cid in chunk_ids if cid not in result])
+            else:
+                rag_fts.mark_vectorized(chunk_ids)
             return result
 
     return FtsSyncedVectorStore

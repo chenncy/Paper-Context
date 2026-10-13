@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import os
+import json
 import re
 import sqlite3
 import threading
@@ -61,6 +62,12 @@ def _connect() -> sqlite3.Connection:
         )
         conn.execute(
             "CREATE TABLE IF NOT EXISTS rag_fts_meta (key TEXT PRIMARY KEY, value TEXT)"
+        )
+        # FTS 的 text_raw 是展示片段；补算必须保留全文和带类型的完整 metadata。
+        # 使用普通侧表以兼容已有 FTS5 虚拟表（虚拟表不支持 ADD COLUMN）。
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS rag_chunk_payloads ("
+            "chunk_id TEXT PRIMARY KEY, text_raw TEXT NOT NULL, metadata_json TEXT NOT NULL)"
         )
         conn.commit()
         _CONN = conn
@@ -121,14 +128,19 @@ def upsert_chunks(
         return 0
     conn = _connect()
     rows = []
+    payloads = []
     for c in chunks:
         meta = c.get("metadata") or {}
         text = str(c.get("text") or "")
+        chunk_id = str(c.get("id") or "")
+        if not chunk_id:
+            raise ValueError("FTS chunk 缺少 id")
+        payloads.append((chunk_id, text, json.dumps(meta, ensure_ascii=False, default=str)))
         rows.append(
             (
                 fts_analyze(text),
                 text[:4000],
-                str(c.get("id") or ""),
+                chunk_id,
                 _meta_str(meta, "paper_id"),
                 _meta_str(meta, "source"),
                 _meta_str(meta, "title") or _meta_str(meta, "paper_title"),
@@ -138,7 +150,7 @@ def upsert_chunks(
                 1 if vectorized else 0,
             )
         )
-    with _LOCK:
+    with _LOCK, conn:
         if rows:
             conn.execute(
                 "DELETE FROM rag_chunks_fts WHERE chunk_id IN (%s)"
@@ -151,7 +163,10 @@ def upsert_chunks(
             "VALUES (?,?,?,?,?,?,?,?,?,?)",
             rows,
         )
-        conn.commit()
+        conn.executemany(
+            "INSERT OR REPLACE INTO rag_chunk_payloads (chunk_id, text_raw, metadata_json) VALUES (?,?,?)",
+            payloads,
+        )
     return len(rows)
 
 
@@ -169,35 +184,33 @@ def mark_vectorized(chunk_ids: Sequence[str]) -> int:
     return len(chunk_ids)
 
 
+def _delete_chunks(where: str, params: Sequence[Any]) -> int:
+    """同事务删除全文投影和对应补算载荷。"""
+    conn = _connect()
+    with _LOCK, conn:
+        conn.execute(
+            f"DELETE FROM rag_chunk_payloads WHERE chunk_id IN "
+            f"(SELECT chunk_id FROM rag_chunks_fts WHERE {where})",
+            params,
+        )
+        cur = conn.execute(f"DELETE FROM rag_chunks_fts WHERE {where}", params)
+    return cur.rowcount
+
+
 def delete_by_chunk_ids(chunk_ids: Sequence[str]) -> int:
     if not chunk_ids:
         return 0
-    conn = _connect()
-    with _LOCK:
-        cur = conn.execute(
-            "DELETE FROM rag_chunks_fts WHERE chunk_id IN (%s)" % ",".join("?" * len(chunk_ids)),
-            [str(i) for i in chunk_ids],
-        )
-        conn.commit()
-    return cur.rowcount
+    return _delete_chunks(
+        "chunk_id IN (%s)" % ",".join("?" * len(chunk_ids)), [str(i) for i in chunk_ids]
+    )
 
 
 def delete_by_paper_id(paper_id: Any) -> int:
-    conn = _connect()
-    with _LOCK:
-        cur = conn.execute(
-            "DELETE FROM rag_chunks_fts WHERE paper_id=?", (str(paper_id),)
-        )
-        conn.commit()
-    return cur.rowcount
+    return _delete_chunks("paper_id=?", (str(paper_id),))
 
 
 def delete_by_source(source: str) -> int:
-    conn = _connect()
-    with _LOCK:
-        cur = conn.execute("DELETE FROM rag_chunks_fts WHERE source=?", (str(source),))
-        conn.commit()
-    return cur.rowcount
+    return _delete_chunks("source=?", (str(source),))
 
 
 def search(
@@ -259,8 +272,10 @@ def iter_unvectorized(batch_size: int = 512) -> Iterable[Dict[str, Any]]:
     while True:
         with _LOCK:
             rows = conn.execute(
-                "SELECT chunk_id, text_raw, paper_id, source, title, section, page, block_type "
-                "FROM rag_chunks_fts WHERE vectorized=0 AND chunk_id > ? ORDER BY chunk_id LIMIT ?",
+                "SELECT f.chunk_id, COALESCE(p.text_raw, f.text_raw), f.paper_id, f.source, "
+                "f.title, f.section, f.page, f.block_type, p.metadata_json "
+                "FROM rag_chunks_fts f LEFT JOIN rag_chunk_payloads p ON p.chunk_id=f.chunk_id "
+                "WHERE f.vectorized=0 AND f.chunk_id > ? ORDER BY f.chunk_id LIMIT ?",
                 (last_id, max(1, int(batch_size))),
             ).fetchall()
         if not rows:
@@ -269,7 +284,7 @@ def iter_unvectorized(batch_size: int = 512) -> Iterable[Dict[str, Any]]:
             yield {
                 "chunk_id": r[0],
                 "text": r[1],
-                "metadata": {
+                "metadata": json.loads(r[8]) if r[8] is not None else {
                     "paper_id": r[2] or None,
                     "source": r[3] or None,
                     "title": r[4] or None,

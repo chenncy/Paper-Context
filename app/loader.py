@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import logging
 import re
 import unicodedata
 from collections import Counter
@@ -17,6 +18,8 @@ from langchain_community.document_loaders import (
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from app.config import DATA_DIR, PAPERS_DIR
+
+logger = logging.getLogger(__name__)
 
 
 # ====================== 模块 1: 多源文档处理 (升级版) ======================
@@ -549,7 +552,7 @@ def prepare_docs():
         (PAPERS_DIR, "papers/"),  # 论文目录，source 带 papers/ 前缀
     ]
 
-    print(f"\n[INFO] 正在扫描文档目录: {DATA_DIR} 与 {PAPERS_DIR} ...")
+    logger.info("正在扫描文档目录: %s 与 %s ...", DATA_DIR, PAPERS_DIR)
     qasper_offline_dir = os.path.normpath(os.path.join(PAPERS_DIR, "qasper"))
 
     for root_dir, prefix in scan_plan:
@@ -557,11 +560,11 @@ def prepare_docs():
             normalized_file_path = os.path.normpath(file_path)
             # 离线评测数据不进入生产向量库（例如 data/papers/qasper）
             if normalized_file_path.startswith(qasper_offline_dir + os.sep):
-                print(f"[SKIP] 跳过离线评测目录文件: {source_label}")
+                logger.info("跳过离线评测目录文件: %s", source_label)
                 continue
             loader = get_file_loader(file_path)
             if not loader:
-                print(f"[SKIP] 跳过不支持的文件格式: {source_label}")
+                logger.info("跳过不支持的文件格式: %s", source_label)
                 continue
             try:
                 if file_path.lower().endswith(".pdf"):
@@ -588,12 +591,12 @@ def prepare_docs():
                 # 默认不将 reference 区块参与主检索（可按 metadata 配置恢复）
                 cleaned_docs = [d for d in cleaned_docs if not d.metadata.get("exclude_from_retrieval", False)]
                 all_docs.extend(cleaned_docs)
-                print(
+                logger.info(
                     f"[SUCCESS] 成功加载: {source_label} "
                     f"(输入{len(raw_docs)}页/条 -> 输出{len(cleaned_docs)}块, 保留率={report['char_retention_rate']})"
                 )
             except Exception as e:
-                print(f"[ERROR] 加载文件失败 {source_label}: {str(e)}")
+                logger.warning("加载文件失败 %s: %s", source_label, e)
 
     if not all_docs:
         raise ValueError(

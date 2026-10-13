@@ -136,3 +136,35 @@ def test_fts_mode_direct(fts_db):
     assert result["mode"] == "fts"
     assert result["hits"] and result["hits"][0]["block_type"] == "paragraph"
     assert "context" in result
+
+
+def test_backfill_payload_preserves_full_text_and_metadata(fts_db):
+    text = "evidence " * 700
+    metadata = {"doc_id": "parent-1", "parent_id": "parent-1", "paper_id": 7, "page": 0, "source": "long.txt"}
+    fts.upsert_chunks([_chunk("long", text, **metadata)], vectorized=False)
+    pending = list(fts.iter_unvectorized())
+    assert len(pending) == 1
+    assert pending[0]["text"] == text
+    assert pending[0]["metadata"] == metadata
+    assert fts.delete_by_source("long.txt") == 1
+    assert list(fts.iter_unvectorized()) == []
+
+
+@pytest.mark.parametrize("returned_ids", [["actual-id"], []])
+def test_auto_id_backend_never_loses_fts_text(fts_db, returned_ids):
+    from app.vector_store import _fts_synced
+
+    class AutoIdStore:
+        def add_texts(self, texts, metadatas=None, ids=None, **kwargs):
+            return returned_ids
+
+    store = _fts_synced(AutoIdStore)()
+    if returned_ids:
+        assert store.add_texts(["preserved evidence"], ids=["requested-id"]) == returned_ids
+        assert fts.search("evidence")[0]["chunk_id"] == "actual-id"
+        assert fts.counts() == {"fts_chunk_count": 1, "vectorized": 1, "not_vectorized": 0}
+    else:
+        with pytest.raises(RuntimeError):
+            store.add_texts(["preserved evidence"], ids=["requested-id"])
+        assert fts.search("evidence")[0]["chunk_id"] == "requested-id"
+        assert fts.counts()["not_vectorized"] == 1

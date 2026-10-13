@@ -3,6 +3,8 @@ import os
 import pickle
 import re
 import json
+import hashlib
+import logging
 from dataclasses import dataclass
 from typing import List, Optional, Dict, Any, Literal
 from pydantic import Field
@@ -20,6 +22,8 @@ from langchain_community.retrievers import BM25Retriever
 from langchain_core.retrievers import BaseRetriever
 from langchain_core.callbacks import CallbackManagerForRetrieverRun
 from langchain_core.documents import Document
+
+logger = logging.getLogger(__name__)
 
 
 # ====================== 辅助函数：初始化组件 ======================
@@ -107,7 +111,7 @@ class ContextualChildSplitter(RecursiveCharacterTextSplitter):
 
             return generate_chunk_context(chunk_text=child_text, context_text=parent_text)
         except Exception as e:
-            print(f"[CTX][WARN] 情境说明生成失败（跳过）: {e}")
+            logger.warning("[CTX] 情境说明生成失败（跳过）: %s", e)
             return ""
 
 
@@ -120,38 +124,20 @@ def _context_header_text(meta: Dict[str, Any]) -> str:
     return "[" + " | ".join(parts[:2]) + "]"
 
 
-def _get_components(collection_name: Optional[str] = None):
-    """初始化 Embedding 和存储组件；collection_name 默认读 revision active。"""
+def _get_document_components():
+    """本地父块存储与切分器，不初始化 embedding 或向量后端。"""
     from app.config import (
         RAG_CHILD_CHUNK_SIZE,
         RAG_CHILD_CONTEXT_HEADER,
         RAG_CONTEXTUAL_ENABLED,
         RAG_PARENT_SOFT_MAX_CHARS,
     )
-    from app.embedding_cache import CachedOpenAIEmbeddings
-
-    coll = collection_name or get_active_collection_name()
-
-    embeddings = CachedOpenAIEmbeddings(
-        api_key=EMBEDDING_API_KEY,
-        base_url=EMBEDDING_BASE_URL,
-        model=os.getenv("EMBEDDING_MODEL", "text-embedding-v4"),
-        check_embedding_ctx_length=False,
-        chunk_size=10,
-    )
-
     child_splitter = ContextualChildSplitter(
         chunk_size=RAG_CHILD_CHUNK_SIZE,
         context_header=RAG_CHILD_CONTEXT_HEADER,
         contextual_llm=RAG_CONTEXTUAL_ENABLED,
     )
     parent_splitter = SectionBoundarySplitter(soft_max_chars=RAG_PARENT_SOFT_MAX_CHARS)
-
-    # 向量库：由配置选择 Chroma 或 Milvus
-    vectorstore = create_vectorstore(
-        collection_name=coll,
-        embedding_function=embeddings,
-    )
 
     # 文档存储
     if not os.path.exists(STORE_DIR):
@@ -164,7 +150,60 @@ def _get_components(collection_name: Optional[str] = None):
         value_deserializer=pickle.loads
     )
 
+    return store, child_splitter, parent_splitter
+
+
+def _get_vectorstore(collection_name: Optional[str] = None, *, with_embeddings: bool = True):
+    """统计/删除仅需存储连接；检索/写入才需要 embedding 客户端。"""
+    embeddings = None
+    if with_embeddings:
+        from app.embedding_cache import CachedOpenAIEmbeddings
+
+        embeddings = CachedOpenAIEmbeddings(
+            api_key=EMBEDDING_API_KEY,
+            base_url=EMBEDDING_BASE_URL,
+            model=os.getenv("EMBEDDING_MODEL", "text-embedding-v4"),
+            check_embedding_ctx_length=False,
+            chunk_size=10,
+        )
+    return create_vectorstore(
+        collection_name=collection_name or get_active_collection_name(),
+        embedding_function=embeddings,
+    )
+
+
+def _get_components(collection_name: Optional[str] = None):
+    """初始化检索所需的向量库、父块存储与切分器。"""
+    vectorstore = _get_vectorstore(collection_name)
+    store, child_splitter, parent_splitter = _get_document_components()
     return vectorstore, store, child_splitter, parent_splitter
+
+
+def prepare_index_documents(docs: List[Document], collection_name: Optional[str] = None) -> List[Document]:
+    """先保存父块，返回带稳定 ID 的子块；离线入库和补算使用同一父块引用。"""
+    store, child_splitter, parent_splitter = _get_document_components()
+    parents = parent_splitter.split_documents(docs)
+    children: List[Document] = []
+    full_docs = []
+    coll = collection_name or get_active_collection_name()
+    for index, parent in enumerate(parents):
+        meta = parent.metadata or {}
+        identity = json.dumps(
+            [coll, meta.get("source"), meta.get("paper_id"), index, parent.page_content],
+            ensure_ascii=False,
+        )
+        parent_id = "parent-" + hashlib.sha256(identity.encode("utf-8")).hexdigest()
+        full_docs.append((parent_id, parent))
+        for child_index, child in enumerate(child_splitter.split_documents([parent])):
+            child_id = f"{parent_id}-c{child_index}"
+            child.metadata.update({
+                "doc_id": parent_id, "parent_id": parent_id, "chunk_id": child_id,
+                "vector_collection": coll,
+            })
+            child.id = child_id
+            children.append(child)
+    store.mset(full_docs)
+    return children
 
 
 def _normalize_milvus_field_name(key: str) -> str:
@@ -271,7 +310,7 @@ def load_vector_index(read_docs_for_bm25: bool = True) -> IndexLoadResult:
             try:
                 docs = prepare_docs()
             except Exception as e:
-                print(f"[WARN] 词法检索语料加载失败，将仅使用向量检索: {e}")
+                logger.warning("词法检索语料加载失败，将仅使用向量检索: %s", e)
                 docs = []
 
         return IndexLoadResult(
@@ -330,7 +369,7 @@ def ingest_single_file(
         paper_meta=paper_meta or {},
     )
     for line in result.logs:
-        print(line)
+        logger.info("%s", line)
     if not result.success:
         err = next((l for l in reversed(result.logs) if l.startswith("[ERROR]")), "索引失败")
         raise ValueError(err)
@@ -340,16 +379,16 @@ def ingest_single_file(
 def delete_documents_by_paper_id(paper_id: int) -> int:
     """按 paper_id 从向量库（Chroma/Milvus）删除该论文的所有 chunk；返回删除数。"""
     try:
-        vectorstore, _, _, _ = _get_components(get_active_collection_name())
+        vectorstore = _get_vectorstore(get_active_collection_name(), with_embeddings=False)
         pid = int(paper_id)
         active = get_active_collection_name()
         ids = search_ids_by_metadata(vectorstore, active, {"paper_id": pid})
         if ids:
             delete_by_ids(vectorstore, active, ids)
-            print(f"[Retriever] 已从向量库删除 paper_id={paper_id} 的 {len(ids)} 条 chunk")
+            logger.info("已从向量库删除 paper_id=%s 的 %s 条 chunk", paper_id, len(ids))
         return len(ids)
     except Exception as e:
-        print(f"[Retriever] 按 paper_id 删除向量失败: {e}")
+        logger.warning("按 paper_id 删除向量失败: %s", e)
         raise
 
 
@@ -360,15 +399,15 @@ def delete_documents_by_source(source: str) -> int:
     注意 doc_store 中的父块不随删（不可达即无害，全量清理靠重建）。
     """
     try:
-        vectorstore, _, _, _ = _get_components(get_active_collection_name())
+        vectorstore = _get_vectorstore(get_active_collection_name(), with_embeddings=False)
         active = get_active_collection_name()
         ids = search_ids_by_metadata(vectorstore, active, {"source": str(source)})
         if ids:
             delete_by_ids(vectorstore, active, ids)
-            print(f"[Retriever] 已从向量库删除 source={source} 的 {len(ids)} 条 chunk")
+            logger.info("已从向量库删除 source=%s 的 %s 条 chunk", source, len(ids))
         return len(ids)
     except Exception as e:
-        print(f"[Retriever] 按 source 删除向量失败: {e}")
+        logger.warning("按 source 删除向量失败: %s", e)
         raise
 
 
@@ -378,9 +417,9 @@ def load_or_build_vector_db():
     """
     result = load_vector_index(read_docs_for_bm25=True)
     if result.status != "ready":
-        print(f"[WARN] 向量索引不可用: {result.message}")
+        logger.warning("向量索引不可用: %s", result.message)
         return None, []
-    print(f"[INFO] {result.message}")
+    logger.info("%s", result.message)
     return result.retriever, result.docs
 
 
@@ -400,7 +439,7 @@ class MyEnsembleRetriever(BaseRetriever):
                 docs = retriever.invoke(query, config={"callbacks": run_manager.get_child()})
                 doc_lists.append(docs)
             except Exception as e:
-                print(f"[WARN] 检索器 {i} 报错: {e}")
+                logger.warning("检索器 %s 报错: %s", i, e)
                 doc_lists.append([])
 
         rrf_score = {}
@@ -418,13 +457,13 @@ class MyEnsembleRetriever(BaseRetriever):
 
 def get_hybrid_retriever(pd_retriever, docs):
     if not docs:
-        print("[WARN] 缺少文档用于BM25，仅使用向量检索")
+        logger.warning("缺少文档用于BM25，仅使用向量检索")
         return pd_retriever
 
     bm25_retriever = BM25Retriever.from_documents(docs)
     bm25_retriever.k = 20
 
-    print(f"[INFO] 初始化混合检索: BM25(0.5) + Parent-Child Vector(0.5)")
+    logger.info("初始化混合检索: BM25(0.5) + Parent-Child Vector(0.5)")
 
     return MyEnsembleRetriever(
         retrievers=[bm25_retriever, pd_retriever],

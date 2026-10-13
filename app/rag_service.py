@@ -8,12 +8,15 @@
 from __future__ import annotations
 
 import os
+import logging
 from typing import Any, Dict, List, Optional
 
 from langchain_core.documents import Document
 from langchain_core.retrievers import BaseRetriever
 
 from app.config import RAG_HIT_MAX_CHARS, RAG_RERANK_ENABLED, RAG_RETRIEVAL_MODE, RAG_TOP_N
+
+logger = logging.getLogger(__name__)
 
 VALID_MODES = ("auto", "vector", "hybrid", "fts")
 
@@ -45,10 +48,10 @@ def get_search_retriever(mode: Optional[str] = None) -> Optional[BaseRetriever]:
 
     from app.retriever import get_hybrid_retriever, load_vector_index
 
-    print(f"[RAG] 初始化检索资源 mode={m} ...")
+    logger.info("初始化检索资源 mode=%s ...", m)
     result = load_vector_index(read_docs_for_bm25=(m == "hybrid"))
     if result.status != "ready" or result.retriever is None:
-        print(f"[RAG][WARN] 检索资源未就绪: {result.message}")
+        logger.warning("检索资源未就绪: %s", result.message)
         return None
 
     retriever: BaseRetriever = result.retriever
@@ -188,7 +191,7 @@ def _vector_search_result(q: str, docs: List[Document], n: int, *, mode_used: st
 
             docs = rerank_documents(q, docs, top_n=n)
         except Exception as e:
-            print(f"[RAG][WARN] rerank 跳过: {e}")
+            logger.warning("rerank 跳过: %s", e)
 
     hits = [_hit_to_dict(d, i + 1) for i, d in enumerate(docs[:n])]
     return {
@@ -197,6 +200,35 @@ def _vector_search_result(q: str, docs: List[Document], n: int, *, mode_used: st
         "hits": hits,
         "context": _format_context(hits),
     }
+
+
+def rag_stats() -> Dict[str, Any]:
+    """全文统计始终可用；向量统计不创建 embedding 客户端。"""
+    from pathlib import Path
+    from app import rag_fts
+    from app.collection_revision import get_active_collection_name
+    from app.config import STORE_DIR, VECTOR_BACKEND
+    from app.retriever import _get_vectorstore
+    from app.vector_store import count_vectors
+
+    coll = get_active_collection_name()
+    store_dir = Path(STORE_DIR)
+    result = {
+        "backend": VECTOR_BACKEND,
+        "collection": coll,
+        "chunk_count": None,
+        "parent_doc_count": sum(1 for p in store_dir.iterdir() if p.is_file()) if store_dir.exists() else 0,
+        "retrieval_mode": os.getenv("RAG_RETRIEVAL_MODE", "auto"),
+        **rag_fts.counts(),
+    }
+    try:
+        vectorstore = _get_vectorstore(coll, with_embeddings=False)
+        result["chunk_count"] = count_vectors(vectorstore, coll)
+        result["vector_status"] = "ready" if result["chunk_count"] else "empty"
+    except Exception as ex:
+        result["vector_status"] = "unavailable"
+        result["vector_error"] = str(ex)
+    return result
 
 
 def rag_ingest(
@@ -226,24 +258,38 @@ def rag_ingest(
         )
         from app import rag_fts
 
-        if paper_id is not None:
-            deleted = delete_documents_by_paper_id(paper_id)
-            fts_deleted = rag_fts.delete_by_paper_id(paper_id)
-        elif source:
-            deleted = delete_documents_by_source(source)
-            fts_deleted = rag_fts.delete_by_source(source)
-        else:
+        if paper_id is None and not source:
             return {"success": False, "error": "delete 需要 paper_id 或 source"}
+        deleted = None
+        fts_deleted = None
+        errors = []
+        try:
+            deleted = (
+                delete_documents_by_paper_id(paper_id) if paper_id is not None
+                else delete_documents_by_source(source)
+            )
+        except Exception as ex:
+            errors.append(f"向量删除失败: {ex}")
+        try:
+            fts_deleted = (
+                rag_fts.delete_by_paper_id(paper_id) if paper_id is not None
+                else rag_fts.delete_by_source(source)
+            )
+        except Exception as ex:
+            errors.append(f"全文删除失败: {ex}")
         try:
             refresh_retriever_cache()
         except Exception as e:
-            print(f"[RAG][WARN] 删除后缓存刷新失败: {e}")
-        return {
-            "success": True,
+            logger.warning("删除后缓存刷新失败: %s", e)
+        result = {
+            "success": not errors,
             "action": "delete",
             "deleted_chunks": deleted,
             "deleted_fts_chunks": fts_deleted,
         }
+        if errors:
+            result["error"] = "; ".join(errors)
+        return result
 
     file_path = (file_path or "").strip()
     if not file_path:
@@ -267,7 +313,7 @@ def rag_ingest(
     try:
         refresh_retriever_cache()
     except Exception as e:
-        print(f"[RAG][WARN] 入库后缓存刷新失败: {e}")
+        logger.warning("入库后缓存刷新失败: %s", e)
 
     doc_ctx = result.context or {}
     reverse: Dict[str, Any] = {"action": "delete"}

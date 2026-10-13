@@ -165,7 +165,8 @@ def write_to_index(
     status: indexed（向量+FTS 全写）/ fts_only（embedding 不可达，FTS 投影已写，
     检索走 mode=auto 将降级全文检索，事后可 backfill 补算向量）/ failed。
     """
-    from app.retriever import _new_parent_retriever, _sanitize_docs_for_milvus
+    from app import rag_fts
+    from app.retriever import _get_vectorstore, _sanitize_docs_for_milvus, prepare_index_documents
 
     logs: List[str] = []
     if not docs:
@@ -177,12 +178,28 @@ def write_to_index(
     coll = collection_name or "default"
     logs.append(f"[INDEX] 写入 {len(sanitized)} 块 → collection={coll} (Parent-Child)...")
 
+    # 本地写入是成功的必要条件，必须在任何 embedding 初始化/请求之前完成。
+    try:
+        children = prepare_index_documents(sanitized, collection_name=collection_name)
+        if not children:
+            raise ValueError("切分后无子块可写入")
+        written = rag_fts.upsert_chunks([
+            {"id": child.id, "text": child.page_content, "metadata": child.metadata}
+            for child in children
+        ], vectorized=False)
+        if written != len(children):
+            raise RuntimeError(f"FTS 写入不完整: {written}/{len(children)}")
+        logs.append(f"[FTS] 已保存 {written} 个子块及对应父块")
+    except Exception as ex:
+        logs.append(f"[ERROR] 本地索引写入失败: {ex}")
+        return "failed", logs
+
     retry = 0
     last_error = ""
     while retry < max_retries:
         try:
-            pd_retriever = _new_parent_retriever(search_k=20, collection_name=collection_name)
-            pd_retriever.add_documents(sanitized)
+            vectorstore = _get_vectorstore(collection_name)
+            vectorstore.add_documents(children, ids=[child.id for child in children])
             logs.append(f"[SUCCESS] {filename} 已加入知识库 ({coll})")
             return "indexed", logs
         except Exception as ex:
@@ -197,7 +214,7 @@ def write_to_index(
                 break
             time.sleep(retry * 2)
 
-    # FTS 投影由 vectorstore 包装层先于向量写入（幂等），向量失败时文本已保留
+    # 只有上面的本地持久化已经成功，才允许返回 fts_only。
     logs.append(
         f"[WARN] 向量写入最终失败（{last_error[:160]}）；FTS 投影已保留，"
         "检索将走全文检索（mode=auto 自动降级），可用 scripts/backfill_embeddings.py 补算向量"
@@ -245,7 +262,7 @@ def run_ingestion_pipeline(
         logs.append(f"[ENRICH] metadata schema 已注入 ({len(enriched)} blocks)")
 
         index_ok = True
-        vectorized = True
+        vectorized = False
         if skip_index:
             logs.append("[INDEX] skip_index=true，跳过写入")
         else:

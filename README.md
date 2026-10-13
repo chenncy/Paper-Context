@@ -11,7 +11,7 @@
 ├─ Service layer: Paper-Context
 │    ① Paper knowledge base: rag_search (evidence retrieval with provenance) / rag_ingest (reversible)
 │    ② Long-term memory: memory_save / get / history / forget / prepare / handoff
-└─ Data layer: SQLite FTS5 (default, zero-config) + optional vector store + MySQL (memory source of truth)
+└─ Data layer: SQLite FTS5 + local parent documents + optional vectors; memory defaults to SQLite, with optional MySQL
 ```
 
 ## Quick Start (zero-config — no API key, no database required)
@@ -73,7 +73,11 @@ Expect ~2 minutes of cold start on first tool call (index loading happens at sta
 2. **Embedding endpoint** (optional): point `EMBEDDING_BASE_URL` at any OpenAI-compatible endpoint (Ollama / vLLM / self-hosted gateway) and vector search activates automatically
 3. **Cloud API** (optional): any OpenAI-compatible embedding endpoint (e.g. DashScope text-embedding-v4)
 
-Ingestion is decoupled from embedding: when the embedding endpoint is unreachable, ingestion still succeeds (text goes to FTS, marked unvectorized); once restored, `scripts/backfill_embeddings.py` fills the vectors in.
+Ingestion saves parent documents, full text and complete metadata before attempting vector writes. Without an API key or with an unreachable embedding endpoint, ingestion remains available with `validation_metrics.vectorized=false`; this means the current vector write was not completed, while FTS retrieval is available. Failed local text writes return `success=false`. Re-ingesting an unchanged file reuses stable IDs.
+
+`rag_stats` and deletion do not call embedding. If the vector backend is unavailable, stats still include FTS counts, with a `null` vector count and `vector_error`. If either side of deletion fails, the response reports `success=false` and the counts already deleted.
+
+Once an embedding endpoint is configured, `scripts/backfill_embeddings.py` fills the vectors in. Full metadata and parent references are retained so parent-child retrieval works after backfill. For older records missing parent references, the script asks you to re-ingest the source file.
 
 ## Memory Mechanisms
 
@@ -85,7 +89,7 @@ Ingestion is decoupled from embedding: when the embedding endpoint is unreachabl
 ## Tests
 
 ```bash
-PYTHONPATH=. .venv/Scripts/python -m pytest tests/ -q   # 75 tests, all local (SQLite / tmp files)
+PYTHONPATH=. .venv/Scripts/python -m pytest tests/ -q   # 89 tests, all local (SQLite / tmp files)
 ```
 
 ## License

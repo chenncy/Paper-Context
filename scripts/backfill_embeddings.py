@@ -28,26 +28,45 @@ def main() -> None:
     print(f"[EMBED-BACKFILL] 待补算 {pending} 条，batch={batch}", flush=True)
 
     from app.collection_revision import get_active_collection_name
-    from app.retriever import _get_components
+    from app.retriever import _get_vectorstore
 
     coll = get_active_collection_name()
-    vectorstore, _, _, _ = _get_components(coll)
+    vectorstores = {}
+
+    def flush(buf):
+        target = buf[0]["metadata"].get("vector_collection") or coll
+        if target not in vectorstores:
+            vectorstores[target] = _get_vectorstore(target)
+        return _flush(vectorstores[target], buf)
 
     t0 = time.time()
     done = 0
     buf = []
     for chunk in rag_fts.iter_unvectorized(batch_size=batch):
+        if buf and (chunk["metadata"].get("vector_collection") or coll) != (buf[0]["metadata"].get("vector_collection") or coll):
+            done += flush(buf)
+            buf = []
         buf.append(chunk)
         if len(buf) >= batch:
-            done += _flush(vectorstore, buf)
+            done += flush(buf)
             buf = []
             print(f"[EMBED-BACKFILL] 进度 {done}/{pending}（{time.time() - t0:.0f}s）", flush=True)
     if buf:
-        done += _flush(vectorstore, buf)
+        done += flush(buf)
     print(f"[EMBED-BACKFILL] 完成：{done} 条已补算，耗时 {time.time() - t0:.0f}s")
 
 
 def _flush(vectorstore, buf) -> int:
+    from app.retriever import _get_document_components
+
+    if not buf:
+        return 0
+    parent_ids = [c["metadata"].get("doc_id") for c in buf]
+    if not all(parent_ids):
+        raise ValueError("待补算 chunk 缺少父块引用，请重新导入源文件后补算")
+    store, _, _ = _get_document_components()
+    if any(parent is None for parent in store.mget(parent_ids)):
+        raise ValueError("待补算 chunk 的父块已缺失，请重新导入源文件后补算")
     texts = [c["text"] for c in buf]
     metas = [c["metadata"] for c in buf]
     ids = [c["chunk_id"] for c in buf]
