@@ -28,4 +28,15 @@ jobs:
           EMBEDDING_BASE_URL: http://127.0.0.1:1/v1
           EMBEDDING_API_KEY: test-key-for-ci
           DASHSCOPE_API_KEY: test-key-for-ci
-        run: python -m pytest tests/ -q
+        run: |
+          set -o pipefail
+          python -m pytest tests/ -q --tb=short 2>&1 | tee pytest.log
+      - name: Failure summary
+        if: failure()
+        run: |
+          {
+            echo "### Failed tests"
+            echo '```'
+            grep -E "FAILED|Error|assert|raise" pytest.log | head -40 || tail -60 pytest.log
+            echo '```'
+          } >> $GITHUB_STEP_SUMMARY
