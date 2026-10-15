@@ -14,6 +14,9 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+# Tests must never load a user's real .env or API/database credentials.
+os.environ["PAPER_CONTEXT_SKIP_DOTENV"] = "1"
+
 # 必然拒绝的端点（127.0.0.1:1 无服务监听）：连接拒绝在毫秒级发生
 os.environ["EMBEDDING_BASE_URL"] = "http://127.0.0.1:1/v1"
 os.environ["EMBEDDING_API_KEY"] = "test-key-for-pytest"

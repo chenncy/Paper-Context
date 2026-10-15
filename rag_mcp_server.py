@@ -25,9 +25,9 @@ _ROOT = Path(__file__).resolve().parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from dotenv import load_dotenv
+from app.env import load_project_env
 
-load_dotenv(_ROOT / ".env")
+load_project_env()
 
 logging.basicConfig(
     level=logging.INFO,

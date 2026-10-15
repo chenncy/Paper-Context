@@ -1,7 +1,5 @@
 import os
-from dotenv import load_dotenv
-
-load_dotenv()
+from app.env import load_project_env
 
 # 基础配置
 # 1. 动态获取当前文件 (config.py) 的绝对路径
@@ -17,13 +15,14 @@ app_dir = os.path.dirname(current_file_path)
 PROJECT_ROOT = os.path.dirname(app_dir)
 
 # 4. 加载 .env (现在我们可以确保它一定在根目录找)
-load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
+load_project_env()
 
 # ================= 配置路径 =================
 # 使用 os.path.join 拼接，自动适配 Windows(\) 和 Mac/Linux(/)
 DATA_DIR = os.path.join(PROJECT_ROOT, "data")
-# 论文/长文档统一放此目录（与 data 根目录并列加载，供索引与 RAGAS 等使用）
-PAPERS_DIR = os.path.join(PROJECT_ROOT, "data", "papers")
+# 论文/长文档统一放此目录（与 data 根目录并列加载，供索引与 RAGAS 等使用）；
+# 可 env 外移实现数据与仓库分离（与 DB_DIR/STORE_DIR 同一模式）
+PAPERS_DIR = os.getenv("PAPERS_DIR", os.path.join(DATA_DIR, "papers")).strip() or os.path.join(DATA_DIR, "papers")
 # 向量库目录（可 env 外移，与仓库分离——数据不进 git，见 requirements-mcp.txt 同级说明）
 DB_DIR = os.getenv("DB_DIR", os.path.join(PROJECT_ROOT, "chroma_db_qwen")).strip() or os.path.join(PROJECT_ROOT, "chroma_db_qwen")
 VECTOR_BACKEND = os.getenv("VECTOR_BACKEND", "chroma").strip().lower() or "chroma"

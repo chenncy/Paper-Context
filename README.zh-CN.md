@@ -14,46 +14,77 @@
 └─ 数据层：SQLite FTS5 + 本地父块存储 + 可选向量库；记忆默认 SQLite，可选 MySQL
 ```
 
-## 快速开始（零配置——无需 API key、无需数据库）
+## 快速开始（无需 API key、无需单独部署数据库）
+
+需要 **Python 3.10 或 3.11**。请按你的系统选择一组命令，不需要激活虚拟环境。
+
+### Windows / PowerShell
+
+```powershell
+git clone https://github.com/chenncy/Paper-Context.git
+cd Paper-Context
+py -3.11 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe scripts/init_db.py
+.\.venv\Scripts\python.exe scripts/check_install.py
+```
+
+### macOS / Linux
+
+先安装 Python 3.11（也可使用 `python3.10`），然后执行：
 
 ```bash
 git clone https://github.com/chenncy/Paper-Context.git
 cd Paper-Context
-python -m venv .venv                # Python 3.10/3.11
-.venv/Scripts/pip install -r requirements.txt   # 或 .venv/bin/pip
-PYTHONPATH=. .venv/Scripts/python scripts/init_db.py
+python3.11 -m venv .venv
+./.venv/bin/python -m pip install --upgrade pip
+./.venv/bin/python -m pip install -r requirements.txt
+./.venv/bin/python scripts/init_db.py
+./.venv/bin/python scripts/check_install.py
 ```
 
-到此即可用——FTS 全文检索零 API key，记忆服务默认本地 SQLite 文件
-（`paper_context.db`）。两个可选升级：
+检查结束应显示 `[PASS] installation and both MCP services are ready`。检查会在临时目录
+验证 TXT、DOCX、PDF 入库、带出处的全文检索和跨会话记忆，不读取项目 `.env`，不修改已有数据。
+首次检查可能需要几分钟，过程中会打印进度。
 
-- **向量检索**：`EMBEDDING_BASE_URL` 指向任意 OpenAI 兼容端点
-- **MySQL**（多进程/持久部署）：
-
-```bash
-mysql -uroot -e "CREATE DATABASE paper_context CHARACTER SET utf8mb4"
-echo "SQLALCHEMY_DATABASE_URL=mysql+pymysql://root:@localhost:3306/paper_context?charset=utf8mb4" >> .env
-```
+默认记忆数据存到项目根 `paper_context.db`，论文索引和父块分别存到 `chroma_db_qwen/`、
+`doc_store/`。无需创建 `.env`；如需自定义，可复制 `.env.example`，示例也保持 SQLite 默认。
+向量检索与 MySQL 是可选升级，见[配置与排错](docs/getting-started.zh-CN.md#可选配置)。
 
 ## 接入宿主
 
-**Claude Code**：项目根 `.mcp.json` 已登记，在项目目录打开即用。
+用刚安装的虚拟环境生成当前机器的绝对路径配置，无需手动拼接 Windows 或 Unix 路径。
 
-**Codex**（`~/.codex/config.toml`，路径替换为你的仓库位置）：
+**Windows / PowerShell：**
 
-```toml
-[mcp_servers.paper_context_rag]
-command = "<repo>/.venv/Scripts/python.exe"
-args = ["<repo>/rag_mcp_server.py"]
-startup_timeout_sec = 300
-
-[mcp_servers.paper_context_memory]
-command = "<repo>/.venv/Scripts/python.exe"
-args = ["<repo>/memory_mcp_server.py"]
-startup_timeout_sec = 300
+```powershell
+.\.venv\Scripts\python.exe scripts/configure_mcp.py --client claude
+# 使用 Codex 时改为：
+.\.venv\Scripts\python.exe scripts/configure_mcp.py --client codex
 ```
 
-首次调用前有约 2 分钟冷启动（索引加载，启动期预载完成，之后工具调用为热路径）。
+**macOS / Linux：**
+
+```bash
+./.venv/bin/python scripts/configure_mcp.py --client claude
+# 使用 Codex 时改为：
+./.venv/bin/python scripts/configure_mcp.py --client codex
+```
+
+- **Claude Code**：生成项目根 `.mcp.json`，重新打开项目并按客户端提示启用两个服务。
+- **Claude Desktop**：把生成文件里的 `mcpServers` 条目合并到客户端的 MCP 配置，重启客户端。
+- **Codex**：生成 `codex-mcp.toml`，把其中两段服务配置合并到 `~/.codex/config.toml`，重启 Codex；已有同名配置时替换该段，勿重复添加。
+
+生成的配置不含 API key，并已加入 Git 忽略。Claude 生成器保留其他服务，同名自定义配置会提示手动处理。
+冷启动时间取决于磁盘和依赖加载；Codex 配置给启动与工具调用预留 300 秒。
+客户端连接成功后，可查看 `rag_ingest`、`rag_search`、`memory_save` 等工具。
+
+## 第一次使用
+
+按[完整演示](docs/getting-started.zh-CN.md#第一次使用导入检索出处记忆)走一遍：
+导入仓库自带的教学文档 → 检索证据 → 检查 title/section/page → 保存阅读偏好 → 新会话读取。
+每一步都有工具参数、预期结果和排错提示；换成自己的 PDF 时只需替换文件绝对路径。
 
 ## 工具面（17 个 MCP 工具）
 
@@ -88,9 +119,17 @@ startup_timeout_sec = 300
 
 ## 测试
 
-```bash
-PYTHONPATH=. .venv/Scripts/python -m pytest tests/ -q   # 89 个测试，全部本地 SQLite/临时文件
+```powershell
+.\.venv\Scripts\python.exe -m pip install pytest
+.\.venv\Scripts\python.exe -m pytest tests/ -q
 ```
+
+```bash
+./.venv/bin/python -m pip install pytest
+./.venv/bin/python -m pytest tests/ -q
+```
+
+CI 覆盖 Windows、macOS、Linux 的 Python 3.10/3.11，先做安装与真实 MCP 启动检查，再运行回归测试。
 
 ## License
 

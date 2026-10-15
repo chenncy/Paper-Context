@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # Paper-Context 依赖（pin 自实测矩阵：71 测试 + MCP 双服务冒烟通过）
 #
 # Python 3.10 / 3.11（chromadb 0.4.22 的 chroma-hnswlib 无 3.12+ 预编译包）
@@ -8,6 +9,7 @@ mcp==1.6.0
 
 # --- 论文知识库（结构化切分 / 检索 / 入库）---
 chromadb==0.4.22
+onnxruntime==1.20.1; sys_platform == "win32"  # Windows 原生导入基线，避免未固定的 DLL 初始化回归
 numpy==1.26.4               # numpy 2.0 移除 np.float_，chromadb 0.4.22 不兼容
 langchain-core==1.6.4
 langchain-classic==1.0.8    # ParentDocumentRetriever / LocalFileStore
@@ -19,6 +21,7 @@ pymupdf==1.28.2             # layout-aware PDF 解析（默认解析器）
 pdfplumber==0.11.10
 pypdf==3.17.4
 python-docx==1.1.0
+docx2txt==0.9               # Docx2txtLoader 的实际解析依赖
 redis==8.1.0                # embedding 缓存（可选；不可用时自动直连）
 
 # 可选：VECTOR_BACKEND=milvus 时

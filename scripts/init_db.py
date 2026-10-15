@@ -1,7 +1,7 @@
 """一次性建表脚本（新部署初始化）：记忆库 schema，MySQL 与 SQLite 双方言。
 
 用法（可选 .env；未配置任何连接串时自动使用本地 SQLite paper_context.db）：
-  PYTHONPATH=. .venv/Scripts/python scripts/init_db.py
+  python scripts/init_db.py
 
 幂等：ensure_* 均为 IF NOT EXISTS / 补列语义，重复执行无害。
 """
@@ -13,9 +13,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from dotenv import load_dotenv
+from app.env import load_project_env
 
-load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+load_project_env()
 
 t0 = time.time()
 
@@ -190,11 +190,9 @@ tick("agent_memory 主表就绪")
 
 from app.memory_schema import ensure_memory_schema
 
-try:
+if not is_sqlite:
     ensure_memory_schema(engine)
     tick("ensure_memory_schema（agent_session_state / memory_item_history 等）")
-except Exception as e:
-    print(f"[WARN] ensure_memory_schema 在 {backend} 上部分失败: {e}")
 
 from app.session_events import ensure_session_event_schema
 

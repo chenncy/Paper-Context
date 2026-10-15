@@ -238,6 +238,27 @@ def test_real_pdf_fts_only_without_key(isolated_ingestion, monkeypatch):
     assert rag_fts.counts()["fts_chunk_count"] == 0
 
 
+def test_real_docx_fts_only_without_key(isolated_ingestion, monkeypatch):
+    from docx import Document
+    monkeypatch.setattr(retriever, "EMBEDDING_API_KEY", "")
+    for key in ("OPENAI_API_KEY", "OPENAI_ADMIN_KEY"):
+        monkeypatch.delenv(key, raising=False)
+    path = isolated_ingestion.with_suffix(".docx")
+    document = Document()
+    document.add_paragraph("# Introduction")
+    document.add_paragraph("Document evidence survives offline ingestion for academic research. The local knowledge base preserves the source and section of each paragraph.")
+    document.save(path)
+    result = rag_service.rag_ingest(str(path), paper_title="DOCX evidence study")
+    assert result["success"], result
+    assert result["validation_metrics"]["vectorized"] is False
+    search = rag_service.rag_search("document evidence", mode="fts")
+    assert search["hits"] and search["hits"][0]["source"] == "paper.docx"
+    assert search["hits"][0]["title"] == "DOCX evidence study"
+    assert search["hits"][0]["section"]
+    assert rag_service.rag_ingest("", **result["reverse"])["success"]
+    assert rag_fts.counts()["fts_chunk_count"] == 0
+
+
 def test_mcp_wrappers_do_not_print_diagnostics_to_stdout(local_ingestion, capsys):
     import rag_mcp_server
     result = json.loads(rag_mcp_server.rag_ingest(str(local_ingestion)))

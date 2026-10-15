@@ -14,46 +14,78 @@
 └─ Data layer: SQLite FTS5 + local parent documents + optional vectors; memory defaults to SQLite, with optional MySQL
 ```
 
-## Quick Start (zero-config — no API key, no database required)
+## Quick Start (no API key or separate database server)
+
+Use **Python 3.10 or 3.11**. Choose the commands for your platform; virtualenv activation is not required.
+
+### Windows / PowerShell
+
+```powershell
+git clone https://github.com/chenncy/Paper-Context.git
+cd Paper-Context
+py -3.11 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe scripts/init_db.py
+.\.venv\Scripts\python.exe scripts/check_install.py
+```
+
+### macOS / Linux
+
+Install Python 3.11 first (or use `python3.10`), then run:
 
 ```bash
 git clone https://github.com/chenncy/Paper-Context.git
 cd Paper-Context
-python -m venv .venv                # Python 3.10/3.11
-.venv/Scripts/pip install -r requirements.txt   # or .venv/bin/pip
-PYTHONPATH=. .venv/Scripts/python scripts/init_db.py
+python3.11 -m venv .venv
+./.venv/bin/python -m pip install --upgrade pip
+./.venv/bin/python -m pip install -r requirements.txt
+./.venv/bin/python scripts/init_db.py
+./.venv/bin/python scripts/check_install.py
 ```
 
-That's it — FTS retrieval works with zero API keys, and the memory service defaults
-to a local SQLite file (`paper_context.db`). Two optional upgrades:
+The final line should be `[PASS] installation and both MCP services are ready`. The check
+uses temporary data to verify TXT, DOCX and PDF ingestion, evidence retrieval and memory across sessions.
+It ignores the project's `.env` and does not modify existing data. The first check may take several minutes;
+progress is printed along the way.
 
-- **Vector search**: point `EMBEDDING_BASE_URL` at any OpenAI-compatible endpoint
-- **MySQL** (multi-process / persistent deployments):
-
-```bash
-mysql -uroot -e "CREATE DATABASE paper_context CHARACTER SET utf8mb4"
-echo "SQLALCHEMY_DATABASE_URL=mysql+pymysql://root:@localhost:3306/paper_context?charset=utf8mb4" >> .env
-```
+Memory defaults to `paper_context.db` in the project root. Paper indexes and parent documents live in
+`chroma_db_qwen/` and `doc_store/`. No `.env` is needed; copying `.env.example` also keeps the SQLite default.
+Vector search and MySQL are optional upgrades; see [configuration and troubleshooting](docs/getting-started.md#optional-configuration).
 
 ## Connect a Host
 
-**Claude Code**: `.mcp.json` is already in the repo root — open the project and the servers are available.
+Generate configuration with the virtualenv you just installed. The generator uses absolute paths for your platform.
 
-**Codex** (`~/.codex/config.toml`, replace paths with your clone location):
+**Windows / PowerShell:**
 
-```toml
-[mcp_servers.paper_context_rag]
-command = "<repo>/.venv/Scripts/python.exe"
-args = ["<repo>/rag_mcp_server.py"]
-startup_timeout_sec = 300
-
-[mcp_servers.paper_context_memory]
-command = "<repo>/.venv/Scripts/python.exe"
-args = ["<repo>/memory_mcp_server.py"]
-startup_timeout_sec = 300
+```powershell
+.\.venv\Scripts\python.exe scripts/configure_mcp.py --client claude
+# For Codex instead:
+.\.venv\Scripts\python.exe scripts/configure_mcp.py --client codex
 ```
 
-Expect ~2 minutes of cold start on first tool call (index loading happens at startup; subsequent calls are fast).
+**macOS / Linux:**
+
+```bash
+./.venv/bin/python scripts/configure_mcp.py --client claude
+# For Codex instead:
+./.venv/bin/python scripts/configure_mcp.py --client codex
+```
+
+- **Claude Code**: the generator creates `.mcp.json` in the project root. Reopen the project and enable both servers when prompted.
+- **Claude Desktop**: merge the generated `mcpServers` entries into the client's MCP configuration and restart it.
+- **Codex**: merge the two server sections from generated `codex-mcp.toml` into `~/.codex/config.toml` and restart Codex. Replace existing sections with the same names instead of adding duplicates.
+
+Generated files contain no API keys and are Git-ignored. The Claude generator preserves other servers
+and asks you to handle conflicting custom entries manually. Startup time varies with disk and dependency loading;
+the Codex configuration allows 300 seconds for startup and tool calls.
+
+## First Use
+
+Follow the [complete walkthrough](docs/getting-started.md#first-use-ingest-search-provenance-memory):
+ingest the included teaching document → retrieve evidence → inspect title/section/page → save a reading preference → recall it in a new session.
+Each step includes tool arguments, expected results and troubleshooting. To use your own PDF, replace the file's absolute path.
 
 ## Tools (17 MCP tools)
 
@@ -88,9 +120,17 @@ Once an embedding endpoint is configured, `scripts/backfill_embeddings.py` fills
 
 ## Tests
 
-```bash
-PYTHONPATH=. .venv/Scripts/python -m pytest tests/ -q   # 89 tests, all local (SQLite / tmp files)
+```powershell
+.\.venv\Scripts\python.exe -m pip install pytest
+.\.venv\Scripts\python.exe -m pytest tests/ -q
 ```
+
+```bash
+./.venv/bin/python -m pip install pytest
+./.venv/bin/python -m pytest tests/ -q
+```
+
+CI runs on Windows, macOS and Linux with Python 3.10/3.11. It checks installation and real MCP startup before regression tests.
 
 ## License
 

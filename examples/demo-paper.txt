@@ -1,0 +1,8 @@
+# Introduction
+This fictional teaching document describes retrieval augmented generation in a local academic knowledge base. Evidence provenance records the title, section and source of each paragraph so a reader can verify the retrieved text.
+
+# Method
+Full text search retrieves evidence from local documents without an embedding API. The researcher saves stable preferences in global memory and reads them in a new session using the same username and database.
+
+# Limitations
+This is a synthetic example, not a published research paper. Full text search matches words; an English source should be queried with English words. Claims about real research need evidence from actual papers.

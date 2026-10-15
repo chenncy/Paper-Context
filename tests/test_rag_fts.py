@@ -130,6 +130,24 @@ def test_explicit_vector_mode_does_not_degrade(fts_db, monkeypatch):
     assert result["hits"] == []
 
 
+@pytest.mark.parametrize("mode", ["vector", "hybrid"])
+def test_error_diagnostics_do_not_disclose_network_environment_values(fts_db, monkeypatch, mode):
+    class BrokenRetriever:
+        def invoke(self, query):
+            raise RuntimeError("Connection error.")
+
+    proxy = "http://fixture-user:fixture-password@127.0.0.1:9999"
+    certificate = "synthetic-private-certificate-file"
+    monkeypatch.setenv("HTTPS_PROXY", proxy)
+    monkeypatch.setenv("SSL_CERT_FILE", certificate)
+    monkeypatch.setattr(rs, "get_search_retriever", lambda mode=None: BrokenRetriever())
+    result = rs.rag_search("anything", mode=mode)
+    assert result["env_probe"]["HTTPS_PROXY"] is True
+    assert result["env_probe"]["SSL_CERT_FILE"] is True
+    assert proxy not in str(result)
+    assert certificate not in str(result)
+
+
 def test_fts_mode_direct(fts_db):
     fts.upsert_chunks([_chunk("c1", "全文检索零依赖 embedding", block_type="paragraph")])
     result = rs.rag_search("零依赖", mode="fts")

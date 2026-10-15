@@ -27,11 +27,11 @@ import os
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from dotenv import load_dotenv
+from app.env import load_project_env
 
 # 加载项目根 .env
 _ROOT = Path(__file__).resolve().parents[1]
-load_dotenv(_ROOT / ".env")
+load_project_env()
 
 logging.basicConfig(
     level=logging.INFO,

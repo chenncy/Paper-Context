@@ -7,10 +7,17 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     strategy:
+      fail-fast: false
       matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
         python-version: ["3.10", "3.11"]
+    env:
+      PYTHONIOENCODING: utf-8
+      ANONYMIZED_TELEMETRY: "FALSE"
+      PAPER_CONTEXT_SKIP_DOTENV: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -19,8 +26,10 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest
+          python -m pip install -r requirements.txt pytest
+          python -m pip check
+      - name: Check installation and MCP startup
+        run: python scripts/check_install.py
       - name: Run tests
         env:
           PYTHONIOENCODING: utf-8
@@ -29,14 +38,37 @@ jobs:
           EMBEDDING_API_KEY: test-key-for-ci
           DASHSCOPE_API_KEY: test-key-for-ci
         run: |
-          set -o pipefail
-          python -m pytest tests/ -q --tb=short 2>&1 | tee pytest.log
-      - name: Failure summary
-        if: failure()
+          python -m pytest tests/ -q --tb=short --junitxml=pytest-results.xml
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.os }}-py${{ matrix.python-version }}
+          path: pytest-results.xml
+          if-no-files-found: ignore
+      - name: Public test summary
+        if: always()
+        shell: bash
         run: |
-          {
-            echo "### Failed tests"
-            echo '```'
-            grep -E "FAILED|Error|assert|raise" pytest.log | head -40 || tail -60 pytest.log
-            echo '```'
-          } >> $GITHUB_STEP_SUMMARY
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+
+          report = Path("pytest-results.xml")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("### Regression tests\n\n")
+              if not report.exists():
+                  summary.write("No test report: inspect the installation or MCP startup check above.\n")
+              else:
+                  suites = ET.parse(report).getroot().iter("testsuite")
+                  for suite in suites:
+                      summary.write(f"Tests: {suite.get('tests')}; failures: {suite.get('failures')}; errors: {suite.get('errors')}\n\n")
+                  failures = []
+                  for case in ET.parse(report).getroot().iter("testcase"):
+                      for tag in ("failure", "error"):
+                          for failure in case.findall(tag):
+                              failures.append(f"{case.get('classname')}.{case.get('name')}: {failure.get('message', '')}")
+                  if failures:
+                      summary.write("```text\n" + "\n".join(failures[:20])[:8000] + "\n```\n")
+          PY

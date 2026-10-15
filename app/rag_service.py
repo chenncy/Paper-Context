@@ -167,10 +167,10 @@ def rag_search(
         docs = list(retriever.invoke(q) or [])
     except Exception as e:
         # openai SDK 把 SSL/代理/超时统一包成 "Connection error"——带上 cause 链
-        # 与进程网络环境快照（仅 PROXY/SSL/CERT 相关键），供宿主侧定位真实死因
+        # 只返回网络配置是否存在，避免暴露代理认证、证书路径等环境变量原始值。
         cause = repr(getattr(e, "__cause__", None)) or ""
         env_probe = {
-            k: v
+            k: bool(v)
             for k, v in os.environ.items()
             if any(s in k.upper() for s in ("PROXY", "SSL", "CERT"))
         }

@@ -36,10 +36,22 @@ bert_env/
 
 # 环境变量和配置
 .env
+.env.*
+!.env.example
 .evn
 *.env
 config.ini
 secrets.json
+credentials.json
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+# Generated local MCP configuration contains machine-specific absolute paths.
+.mcp.json
+codex-mcp.toml
 
 # 数据库文件
 *.db
