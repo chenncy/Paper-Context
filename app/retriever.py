@@ -94,10 +94,14 @@ class ContextualChildSplitter(RecursiveCharacterTextSplitter):
                     if header:
                         prefix_parts.append(header)
                 if prefix_parts:
+                    prefix = "\n".join(prefix_parts) + "\n"
+                    metadata = dict(c.metadata or {})
+                    if "pdf_page_index" in metadata:
+                        metadata["evidence_prefix_chars"] = len(prefix)
                     out.append(
                         Document(
-                            page_content="\n".join(prefix_parts) + "\n" + c.page_content,
-                            metadata=dict(c.metadata or {}),
+                            page_content=prefix + c.page_content,
+                            metadata=metadata,
                         )
                     )
                 else:
@@ -188,8 +192,11 @@ def prepare_index_documents(docs: List[Document], collection_name: Optional[str]
     coll = collection_name or get_active_collection_name()
     for index, parent in enumerate(parents):
         meta = parent.metadata or {}
+        identity_fields = [coll, meta.get("source"), meta.get("paper_id"), index, parent.page_content]
+        if "pdf_page_index" in meta:
+            identity_fields.extend((meta["doc_hash"], meta["pdf_page_index"]))
         identity = json.dumps(
-            [coll, meta.get("source"), meta.get("paper_id"), index, parent.page_content],
+            identity_fields,
             ensure_ascii=False,
         )
         parent_id = "parent-" + hashlib.sha256(identity.encode("utf-8")).hexdigest()

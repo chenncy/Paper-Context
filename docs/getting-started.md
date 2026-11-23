@@ -171,7 +171,9 @@ A hit should contain fields like these (text and scores may vary):
 
 For TXT/DOCX, `page=0` is a loader placeholder, not an actual citation page. PDF `page` is a zero-based
 physical page index; display page 0 as page 1 to a reader. Sections come from parsing/chunking and may
-need verification for complex PDFs. Ask the host to explain provenance using only the retrieved evidence,
+need verification for complex PDFs. Blocks are merged only within a page. If a PDF was indexed with
+an older version that merged blocks across pages, remove the old entries and re-import it to update its citations.
+Ask the host to explain provenance using only the retrieved evidence,
 citing title, section and available pages. If there are no hits, report that no relevant documents were found.
 
 ### 4. Save a Reading Preference

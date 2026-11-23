@@ -94,6 +94,8 @@ def _fts_search_result(
 ) -> Dict[str, Any]:
     """FTS 检索路径：零 embedding 依赖，hit 结构与向量路径同构。"""
     from app import rag_fts
+    from app.config import EVIDENCE_PORT
+    from urllib.parse import quote
 
     raw_hits = rag_fts.search(q, top_n=n)
     hits = [
@@ -109,6 +111,14 @@ def _fts_search_result(
         }
         for i, h in enumerate(raw_hits)
     ]
+    for hit, raw in zip(hits, raw_hits):
+        if raw.get("pdf_page_index") is not None:
+            hit["page_number"] = raw["pdf_page_index"] + 1
+            hit["evidence_id"] = raw["chunk_id"]
+            hit["excerpt"] = raw["pdf_excerpt"]
+            url = f"http://127.0.0.1:{EVIDENCE_PORT}/read/{quote(raw['chunk_id'], safe='')}"
+            hit["evidence_url"] = url
+            hit["citation"] = f"[PDF 第 {hit['page_number']} 页]({url})"
     result: Dict[str, Any] = {
         "query": q,
         "mode": mode_used,

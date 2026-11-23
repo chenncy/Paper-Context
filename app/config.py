@@ -25,6 +25,7 @@ DATA_DIR = os.path.join(PROJECT_ROOT, "data")
 PAPERS_DIR = os.getenv("PAPERS_DIR", os.path.join(DATA_DIR, "papers")).strip() or os.path.join(DATA_DIR, "papers")
 # 向量库目录（可 env 外移，与仓库分离——数据不进 git，见 requirements-mcp.txt 同级说明）
 DB_DIR = os.getenv("DB_DIR", os.path.join(PROJECT_ROOT, "chroma_db_qwen")).strip() or os.path.join(PROJECT_ROOT, "chroma_db_qwen")
+EVIDENCE_PORT = int(os.getenv("PAPER_CONTEXT_EVIDENCE_PORT", "8765"))
 VECTOR_BACKEND = os.getenv("VECTOR_BACKEND", "chroma").strip().lower() or "chroma"
 MILVUS_HOST = os.getenv("MILVUS_HOST", "localhost").strip() or "localhost"
 MILVUS_PORT = int(os.getenv("MILVUS_PORT", "19530"))

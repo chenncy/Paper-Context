@@ -4,7 +4,7 @@
 
 **给 AI Agent 的论文知识库与长期记忆。MCP-native，宿主无关——思考和编排交给你的 agent（Codex / Claude Code / 任何 MCP 客户端），"知道"和"记住"交给这里。**
 
-[English](README.md)
+[English](README.md) · [项目功能与更新记录](docs/PROJECT.md)
 
 ```
 ┌─ 宿主层：Codex / Claude Code / Claude Desktop（思考、研究、写作）
@@ -85,6 +85,18 @@ python3.11 -m venv .venv
 按[完整演示](docs/getting-started.zh-CN.md#第一次使用导入检索出处记忆)走一遍：
 导入仓库自带的教学文档 → 检索证据 → 检查 title/section/page → 保存阅读偏好 → 新会话读取。
 每一步都有工具参数、预期结果和排错提示；换成自己的 PDF 时只需替换文件绝对路径。
+
+## 从对话引用打开 PDF 原页
+
+完成安装后，在项目目录运行 `python evidence_server.py`。Windows 上可以用
+`.\.venv\Scripts\python.exe evidence_server.py`。服务与 MCP 共用本地索引。
+可在启动命令后加 `--pdf "论文.pdf"`，或用 `rag_ingest` 导入。
+
+在 Codex 中提问，并要求「用 Paper-Context 全文检索，把返回的 citation 放在对应结论后」。
+点击回答里的「PDF 第 N 页」，就会在本地 PDF.js 阅读器里打开原文件的对应页。
+服务首次启动会下载并校验 Mozilla 发布的阅读器，之后可离线使用。
+源文件需保留在入库时的位置。旧索引须先撤销旧入库再重新导入；当前支持带物理页码的 PDF 解析结果。
+如果本机端口冲突，可在同一份 `.env` 中通过 `PAPER_CONTEXT_EVIDENCE_PORT` 修改引用服务和 MCP 链接使用的端口。
 
 ## 工具面（17 个 MCP 工具）
 

@@ -159,6 +159,7 @@ def write_to_index(
     *,
     max_retries: int = 2,
     collection_name: Optional[str] = None,
+    pdf_source: Optional[tuple[str, str]] = None,
 ) -> tuple[str, List[str]]:
     """写入向量索引；返回 (status, logs)。
 
@@ -186,7 +187,7 @@ def write_to_index(
         written = rag_fts.upsert_chunks([
             {"id": child.id, "text": child.page_content, "metadata": child.metadata}
             for child in children
-        ], vectorized=False)
+        ], vectorized=False, pdf_source=pdf_source)
         if written != len(children):
             raise RuntimeError(f"FTS 写入不完整: {written}/{len(children)}")
         logs.append(f"[FTS] 已保存 {written} 个子块及对应父块")
@@ -261,12 +262,27 @@ def run_ingestion_pipeline(
         enriched = enrich_documents(grouped, ctx)
         logs.append(f"[ENRICH] metadata schema 已注入 ({len(enriched)} blocks)")
 
+        pdf_source = None
+        if file_path.lower().endswith(".pdf") and not skip_index:
+            for doc in enriched:
+                meta = doc.metadata
+                page = meta.get("page")
+                if (
+                    type(page) is int and page >= 0
+                    and meta.get("parser") in {"pymupdf_layout", "pdfplumber", "ocr_fallback", "pypdf"}
+                    and meta.get("block_type") != "figure"
+                ):
+                    meta["pdf_page_index"] = page
+                    pdf_source = (ctx["doc_hash"], os.path.realpath(file_path))
+
         index_ok = True
         vectorized = False
         if skip_index:
             logs.append("[INDEX] skip_index=true，跳过写入")
         else:
-            index_status, index_logs = write_to_index(enriched, collection_name=write_coll)
+            index_status, index_logs = write_to_index(
+                enriched, collection_name=write_coll, pdf_source=pdf_source
+            )
             logs.extend(index_logs)
             index_ok = index_status != "failed"
             vectorized = index_status == "indexed"

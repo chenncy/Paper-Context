@@ -4,7 +4,7 @@
 
 **A paper knowledge base and long-term memory for AI agents. MCP-native and host-agnostic — thinking and orchestration stay with your agent (Codex / Claude Code / any MCP client); knowing and remembering live here.**
 
-[中文文档](README.zh-CN.md)
+[中文文档](README.zh-CN.md) · [Project overview and change history (Chinese)](docs/PROJECT.md)
 
 ```
 ┌─ Host layer: Codex / Claude Code / Claude Desktop (thinking, research, writing)
@@ -86,6 +86,19 @@ the Codex configuration allows 300 seconds for startup and tool calls.
 Follow the [complete walkthrough](docs/getting-started.md#first-use-ingest-search-provenance-memory):
 ingest the included teaching document → retrieve evidence → inspect title/section/page → save a reading preference → recall it in a new session.
 Each step includes tool arguments, expected results and troubleshooting. To use your own PDF, replace the file's absolute path.
+
+## Open the cited PDF page from a chat answer
+
+After installation, run `python evidence_server.py` from the repository. On Windows, you can use
+`.\.venv\Scripts\python.exe evidence_server.py`. This service shares the MCP service's local index.
+Append `--pdf "paper.pdf"` to index a PDF before launch, or use `rag_ingest`.
+
+In Codex, ask it to search with `rag_search(mode="fts")` and put each hit's `citation` after the claim
+it supports. Clicking the citation opens the original PDF in a local PDF.js reader at the cited page.
+The service downloads and verifies Mozilla's reader on first launch, then works offline.
+Keep source PDFs in their indexed locations. Remove and re-import older entries to enable links for
+PDFs parsed with physical page numbers. To change the port, set `PAPER_CONTEXT_EVIDENCE_PORT`
+in the shared `.env`.
 
 ## Tools (17 MCP tools)
 

@@ -50,6 +50,8 @@ def rag_search(query: str, top_n: int = 0, mode: str = "") -> str:
     embedding 不可达自动降级全文检索 FTS（note 字段声明降级原因）；
     mode=fts 强制纯全文检索（零 embedding 依赖）。
     返回带出处的 Top-N 证据片段（title/section/page/block_type），不生成答案。
+    全文模式下，PDF 证据在有可靠页码时附带 citation（Markdown 链接）和 excerpt（摘录）。
+    请在支持的结论后直接使用对应的 citation；启动 evidence_server.py 后点击可打开原 PDF 的对应页。
     """
     try:
         from app.rag_service import rag_search as _search

@@ -218,6 +218,11 @@ def test_vector_write_without_ids_keeps_text_on_failure(isolated_ingestion):
 
 def test_real_pdf_fts_only_without_key(isolated_ingestion, monkeypatch):
     import fitz
+    from fastapi.testclient import TestClient
+    from evidence_server import PDFJS_URL, app as evidence_app
+
+    monkeypatch.setattr(config, "INGESTION_SECTION_AWARE", True)
+    monkeypatch.setattr(config, "PDF_PARSER_MODE", "layout")
     monkeypatch.setattr(retriever, "EMBEDDING_API_KEY", "")
     for key in ("OPENAI_API_KEY", "OPENAI_ADMIN_KEY"):
         monkeypatch.delenv(key, raising=False)
@@ -226,6 +231,12 @@ def test_real_pdf_fts_only_without_key(isolated_ingestion, monkeypatch):
         page = pdf.new_page()
         page.insert_text((72, 72), "1 Introduction", fontsize=16)
         page.insert_text((72, 105), "Retrieval evidence survives offline ingestion for local academic research.", fontsize=11)
+        page = pdf.new_page()
+        page.insert_text(
+            (72, 105),
+            "Xylophone records the unique configuration on the second page of the same section.",
+            fontsize=11,
+        )
         pdf.save(str(path))
     result = rag_service.rag_ingest(str(path), paper_title="PDF evidence study")
     assert result["success"], result
@@ -234,8 +245,44 @@ def test_real_pdf_fts_only_without_key(isolated_ingestion, monkeypatch):
     assert search["hits"]
     assert search["hits"][0]["source"] == "paper.pdf"
     assert search["hits"][0]["page"] == "0"
+
+    second_page = rag_service.rag_search("xylophone", mode="fts")["hits"]
+    assert second_page
+    assert all(hit["page"] == "1" for hit in second_page)
+    assert second_page[0]["section"] == search["hits"][0]["section"] == "1 Introduction"
+    assert "Xylophone records the unique configuration" in second_page[0]["text"]
+    assert second_page[0]["page_number"] == 2
+
+    # The chat citation must open the original bytes at a one-based reader page.
+    from urllib.parse import urlsplit
+    import rag_mcp_server
+
+    second_page = json.loads(rag_mcp_server.rag_search("xylophone", mode="fts"))["hits"]
+    evidence_id = second_page[0]["evidence_id"]
+    url = second_page[0]["evidence_url"]
+    assert second_page[0]["citation"] == f"[PDF 第 2 页]({url})"
+    target = urlsplit(url)
+    assert target.path == f"/read/{evidence_id}"
+    assert second_page[0]["excerpt"].startswith("Xylophone records")
+    assert str(path) not in json.dumps(second_page, ensure_ascii=False)
+    client = TestClient(evidence_app, base_url="http://127.0.0.1")
+    jump = client.get(target.path, follow_redirects=False)
+    assert jump.status_code == 307
+    assert jump.headers["location"] == f"{PDFJS_URL}/web/viewer.html?file=%2Fpdf%2F{evidence_id}.pdf#page=2"
+    pdf_path = f"/pdf/{evidence_id}.pdf"
+    response = client.get(pdf_path)
+    assert response.content == path.read_bytes()
+    assert response.headers["content-type"] == "application/pdf"
+    assert response.headers["content-disposition"] == "inline"
+    with fitz.open() as replacement:
+        replacement.new_page()
+        replacement.save(path)
+    assert client.get(pdf_path).status_code == 409
+
     assert rag_service.rag_ingest("", **result["reverse"])["success"]
     assert rag_fts.counts()["fts_chunk_count"] == 0
+    assert client.get(target.path).status_code == 404
+    assert client.get(pdf_path).status_code == 404
 
 
 def test_real_docx_fts_only_without_key(isolated_ingestion, monkeypatch):
@@ -254,6 +301,7 @@ def test_real_docx_fts_only_without_key(isolated_ingestion, monkeypatch):
     search = rag_service.rag_search("document evidence", mode="fts")
     assert search["hits"] and search["hits"][0]["source"] == "paper.docx"
     assert search["hits"][0]["title"] == "DOCX evidence study"
+    assert "evidence_url" not in search["hits"][0]
     assert search["hits"][0]["section"]
     assert rag_service.rag_ingest("", **result["reverse"])["success"]
     assert rag_fts.counts()["fts_chunk_count"] == 0

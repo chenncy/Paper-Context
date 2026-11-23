@@ -24,7 +24,7 @@ def _section_key(meta: Dict[str, Any]) -> str:
 
 def section_aware_group_blocks(docs: List[Document]) -> Tuple[List[Document], Dict[str, Any]]:
     """
-    将连续同 section 的 block 合并为更大的逻辑单元，便于 Parent-Child 召回命中 section。
+    将连续同 section、同页的 block 合并为更大的逻辑单元，保留准确的引用页码。
     heading / caption / equation 保持独立或短合并。
     """
     if not docs:
@@ -32,7 +32,7 @@ def section_aware_group_blocks(docs: List[Document]) -> Tuple[List[Document], Di
 
     grouped: List[Document] = []
     buffer: List[Document] = []
-    buffer_section = ""
+    buffer_location = None
     merged_groups = 0
 
     def _flush():
@@ -53,7 +53,7 @@ def section_aware_group_blocks(docs: List[Document]) -> Tuple[List[Document], Di
     for doc in docs:
         meta = doc.metadata or {}
         bt = str(meta.get("block_type") or "paragraph")
-        section = _section_key(meta)
+        location = (_section_key(meta), meta.get("page"))
 
         if bt in ATOMIC_BLOCK_TYPES:
             # 原子块独立成检索单元，但不打断同 section 文本合并
@@ -62,14 +62,14 @@ def section_aware_group_blocks(docs: List[Document]) -> Tuple[List[Document], Di
             continue
 
         if not buffer:
-            buffer_section = section
+            buffer_location = location
             buffer.append(doc)
             continue
 
         combined_len = sum(len(d.page_content) for d in buffer) + len(doc.page_content)
-        if section != buffer_section or combined_len > SECTION_MERGE_TARGET_CHARS:
+        if location != buffer_location or combined_len > SECTION_MERGE_TARGET_CHARS:
             _flush()
-            buffer_section = section
+            buffer_location = location
             buffer.append(doc)
         else:
             buffer.append(doc)

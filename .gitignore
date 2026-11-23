@@ -81,6 +81,7 @@ logs/
 .DS_Store
 Thumbs.db
 tmp/
+.pdfjs/
 
 # 编译文件
 *.pyc

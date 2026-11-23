@@ -69,6 +69,10 @@ def _connect() -> sqlite3.Connection:
             "CREATE TABLE IF NOT EXISTS rag_chunk_payloads ("
             "chunk_id TEXT PRIMARY KEY, text_raw TEXT NOT NULL, metadata_json TEXT NOT NULL)"
         )
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS rag_pdf_sources ("
+            "doc_hash TEXT PRIMARY KEY, local_path TEXT NOT NULL)"
+        )
         conn.commit()
         _CONN = conn
     return _CONN
@@ -118,6 +122,7 @@ def upsert_chunks(
     chunks: Sequence[Dict[str, Any]],
     *,
     vectorized: bool = True,
+    pdf_source: Optional[tuple[str, str]] = None,
 ) -> int:
     """写入/覆盖一批 chunk 到 FTS 索引（幂等，按 chunk_id 覆盖）。
 
@@ -151,6 +156,11 @@ def upsert_chunks(
             )
         )
     with _LOCK, conn:
+        if pdf_source is not None:
+            conn.execute(
+                "INSERT OR REPLACE INTO rag_pdf_sources (doc_hash, local_path) VALUES (?, ?)",
+                pdf_source,
+            )
         if rows:
             conn.execute(
                 "DELETE FROM rag_chunks_fts WHERE chunk_id IN (%s)"
@@ -225,10 +235,15 @@ def search(
     with _LOCK:
         rows = conn.execute(
             # 列序：0 chunk_id / 1 text_raw / 2 paper_id / 3 source / 4 title /
-            #       5 section / 6 page / 7 block_type / 8 bm25 score
-            "SELECT chunk_id, text_raw, paper_id, source, title, section, page, block_type, "
-            "bm25(rag_chunks_fts) AS score "
-            "FROM rag_chunks_fts WHERE rag_chunks_fts MATCH ? ORDER BY score LIMIT ?",
+            #       5 section / 6 page / 7 block_type / 8 score / 9 PDF page / 10 prefix length
+            "SELECT f.chunk_id, f.text_raw, f.paper_id, f.source, f.title, f.section, f.page, f.block_type, "
+            "bm25(rag_chunks_fts) AS score, "
+            "CASE WHEN s.doc_hash IS NOT NULL THEN json_extract(p.metadata_json, '$.pdf_page_index') END, "
+            "COALESCE(json_extract(p.metadata_json, '$.evidence_prefix_chars'), 0) "
+            "FROM rag_chunks_fts f "
+            "LEFT JOIN rag_chunk_payloads p ON p.chunk_id = f.chunk_id "
+            "LEFT JOIN rag_pdf_sources s ON s.doc_hash = json_extract(p.metadata_json, '$.doc_hash') "
+            "WHERE rag_chunks_fts MATCH ? ORDER BY score LIMIT ?",
             (match, max(1, int(top_n))),
         ).fetchall()
     hits: List[Dict[str, Any]] = []
@@ -244,11 +259,29 @@ def search(
                 "block_type": r[7] or None,
                 "chunk_id": r[0],
                 "paper_id": r[2] or None,
+                "pdf_page_index": r[9],
+                "pdf_excerpt": r[1][r[10]:] if r[9] is not None else None,
                 # 归一到 0-1 相似度，与向量 hit 的 score 字段同构
                 "score": round(1.0 / (1.0 + abs(bm25_score)), 6),
             }
         )
     return hits
+
+
+def get_cited_pdf_source(chunk_id: str) -> Optional[tuple[str, str, int]]:
+    """返回现有证据的本机文件路径、入库哈希和从 1 开始的物理页码。"""
+    conn = _connect()
+    with _LOCK:
+        row = conn.execute(
+            "SELECT s.local_path, s.doc_hash, json_extract(p.metadata_json, '$.pdf_page_index') + 1 "
+            "FROM rag_chunk_payloads p "
+            "JOIN rag_pdf_sources s ON s.doc_hash = json_extract(p.metadata_json, '$.doc_hash') "
+            "WHERE p.chunk_id = ? "
+            "AND json_type(p.metadata_json, '$.pdf_page_index') = 'integer' "
+            "AND json_extract(p.metadata_json, '$.pdf_page_index') >= 0",
+            (chunk_id,),
+        ).fetchone()
+    return row
 
 
 def counts() -> Dict[str, int]:
